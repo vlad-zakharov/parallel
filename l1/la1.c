@@ -3,12 +3,12 @@
 #include "pa1.h"
 #include <stdlib.h>
 #include <unistd.h>
-#include <stdout.h>
+#include <stdio.h>
 #include <time.h>
 
 local_id curr_pid = 0;
 int process_count = 1;
-bi_channel_t pipefd[55];
+
 
 typedef struct
 {
@@ -16,11 +16,15 @@ typedef struct
   int pipe_out[2];
 } bi_channel_t;
 
+bi_channel_t pipefd[55];
+
 int get_ch_count(int process_count)
 {
   return (1 + process_count) * process_count;
 }
 
+
+//pid_a shouldn't equals pid_b
 int get_ch_index(int pid_a, int pid_b, int process_count)
 {
   if(pid_a < pid_b)
@@ -35,9 +39,9 @@ int get_ch_index(int pid_a, int pid_b, int process_count)
 
 int send(void * self, local_id dst, const Message * msg)
 {
-  local_id* self_id = *(local_id*)self;
+  local_id self_id = *(local_id*)self;
   int outfd;
-  int size = sizeof(msg->s_header) + msg->s_payload_length;
+  int size = sizeof(msg->s_header) + (msg->s_header).s_payload_len;
   int index = get_ch_index(self_id, dst, process_count);
 
   if(self_id < dst)
@@ -52,13 +56,14 @@ int send(void * self, local_id dst, const Message * msg)
 
 int send_multicast(void * self, const Message * msg)
 {
-  local_id* self_id = *(local_id*)self;
+  int i;
+  local_id self_id = *(local_id*)self;
   for(i = 0; i < process_count; i++)
     {
       if(i != self_id)
 	if(send((void*)&self_id, i, msg) == -1) 
 	  return -1;
-    {
+    }
       return 0;  
 }
 
@@ -102,7 +107,7 @@ int main(int argc, char* argv[])
       c_pid = fork();
       if(c_pid == 0)
 	{
-	  curr_pid = i;
+	  curr_pid = i + 1;
 	  break;
 	}
     }
@@ -128,7 +133,10 @@ int main(int argc, char* argv[])
 
   if(curr_pid == 0)
     {
-      
+      wait(NULL);
+      exit(EXIT_SUCCESS);
     }
-  
+  else
+    printf("pid %d\n", curr_pid);
+  exit(EXIT_SUCCESS);
 }
