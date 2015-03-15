@@ -2,6 +2,7 @@
 #include "ipc.h"
 #include "pa1.h"
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 #include <stdio.h>
 #include <time.h>
@@ -68,8 +69,32 @@ int send_multicast(void * self, const Message * msg)
 }
 
 
+int receive(void * self, local_id from, Message * msg)
+{
+  local_id self_id = *(local_id*)self;
+  int infd;
+  int size = sizeof(msg->s_header);
+  int index = get_ch_index(self_id, from, process_count);
+
+  if(self_id < dst)
+    infd = pipefd[index].pipe_in[0];
+  else 
+    infd = pipefd[index].pipe_out[0]; 
+  if(read(infd, (void*) msg, size) <0)
+    return -1;
+  if(read(infd, (void*) msg->s_payload, msg->s_header.s_payload_len) <0)
+    return -1;
+  return 0;
+}
+
+
+//int receive_any(void * self, Message * msg);
+
+
 int main(int argc, char* argv[])
 {
+  char* buff_string;
+  Message* message;
   pid_t c_pid;
   int i, index;
   char opt = -1;
@@ -131,12 +156,21 @@ int main(int argc, char* argv[])
 	}
     }
 
+
   if(curr_pid == 0)
     {
       wait(NULL);
       exit(EXIT_SUCCESS);
     }
   else
-    printf("pid %d\n", curr_pid);
+    {
+      sprintf(buff_string, log_started_fmt, curr_pid, getpid(), getppid());
+      message->s_header.s_magic = MESSAGE_MAGIC;
+      message->s_header.s_type = MessageType.STARTED;
+      message->s_header.s_payload_len = strlen(buff_string);
+      message_>s_payload = buff_string;
+      send_multicast(&curr_pid, message);
+      printf("pid %d\n", curr_pid);
+    }
   exit(EXIT_SUCCESS);
 }
