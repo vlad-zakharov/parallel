@@ -6,6 +6,10 @@
 #include <stdout.h>
 #include <time.h>
 
+local_id curr_pid = 0;
+int process_count = 1;
+bi_channel_t pipefd[55];
+
 typedef struct
 {
   int pipe_in[2];
@@ -29,11 +33,40 @@ int get_ch_index(int pid_a, int pid_b, int process_count)
     }
 }
 
+int send(void * self, local_id dst, const Message * msg)
+{
+  local_id* self_id = *(local_id*)self;
+  int outfd;
+  int size = sizeof(msg->s_header) + msg->s_payload_length;
+  int index = get_ch_index(self_id, dst, process_count);
+
+  if(self_id < dst)
+    outfd = pipefd[index].pipe_out[1];
+  else 
+    outfd = pipefd[index].pipe_in[1]; 
+  if(write(outfd, (void*) msg, size) == -1)
+    return -1;
+  return 0;
+}
+
+
+int send_multicast(void * self, const Message * msg)
+{
+  local_id* self_id = *(local_id*)self;
+  for(i = 0; i < process_count; i++)
+    {
+      if(i != self_id)
+	if(send((void*)&self_id, i, msg) == -1) 
+	  return -1;
+    {
+      return 0;  
+}
+
+
 int main(int argc, char* argv[])
 {
-  bi_channel_t pipefd_m[55];
   pid_t c_pid;
-  int i, process_count = 1;
+  int i, index;
   char opt = -1;
   while((opt = getopt(argc, argv, "p:")) != -1)
     switch(opt)
@@ -67,5 +100,35 @@ int main(int argc, char* argv[])
   for(i = 0; i < process_count; i++)
     {
       c_pid = fork();
+      if(c_pid == 0)
+	{
+	  curr_pid = i;
+	  break;
+	}
     }
+
+  //Deleting unusing pipes
+  for(i = 0; i < process_count; i++)
+    {
+      if(i != curr_pid)
+	{
+	  index = get_ch_index(curr_pid, i, process_count);
+	  if(curr_pid < i) 
+	    {
+	      close(pipefd[index].pipe_in[1]);	    
+	      close(pipefd[index].pipe_out[0]);
+	    }
+	  else
+	    {
+	      close(pipefd[index].pipe_in[0]);
+	      close(pipefd[index].pipe_out[1]);	    
+	    }
+	}
+    }
+
+  if(curr_pid == 0)
+    {
+      
+    }
+  
 }
