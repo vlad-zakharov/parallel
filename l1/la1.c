@@ -10,6 +10,8 @@
 local_id curr_pid = 0;
 int process_count = 1;
 
+MessageType MesType;
+
 
 typedef struct
 {
@@ -76,7 +78,7 @@ int receive(void * self, local_id from, Message * msg)
   int size = sizeof(msg->s_header);
   int index = get_ch_index(self_id, from, process_count);
 
-  if(self_id < dst)
+  if(self_id < from)
     infd = pipefd[index].pipe_in[0];
   else 
     infd = pipefd[index].pipe_out[0]; 
@@ -93,7 +95,7 @@ int receive(void * self, local_id from, Message * msg)
 
 int main(int argc, char* argv[])
 {
-  char* buff_string;
+  char buff_string[4088];
   Message* message;
   pid_t c_pid;
   int i, index;
@@ -159,16 +161,19 @@ int main(int argc, char* argv[])
 
   if(curr_pid == 0)
     {
+      printf("%d\n", curr_pid);
       wait(NULL);
       exit(EXIT_SUCCESS);
     }
   else
     {
-      sprintf(buff_string, log_started_fmt, curr_pid, getpid(), getppid());
+      printf("%d\n", curr_pid);
+      sprintf(message->s_payload, log_started_fmt, curr_pid, getpid(), getppid());
+      write(STDOUT_FILENO, message->s_payload, strlen(message->s_payload));
       message->s_header.s_magic = MESSAGE_MAGIC;
-      message->s_header.s_type = MessageType.STARTED;
-      message->s_header.s_payload_len = strlen(buff_string);
-      message_>s_payload = buff_string;
+      message->s_header.s_type = MesType;
+      message->s_header.s_payload_len = strlen(message->s_payload);
+      //      message->s_payload =  buff_string;
       send_multicast(&curr_pid, message);
       printf("pid %d\n", curr_pid);
     }
