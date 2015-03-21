@@ -114,16 +114,25 @@ int main(int argc, char* argv[])
 
   if(curr_pid == 0)
     {
-      for(i = 1; i < process_count; i++)
+      for(i = 1; i <= process_count; i++)
 	{
 	  if(i != curr_pid)
 	    {
 	      receive(&curr_pid, i, message_rec);
+	      if(message_rec->s_header.s_type != STARTED) i--;
 	    }
 	}
-      sprintf(buff_string, log_received_all_started_fmt, curr_pid);
-      write(STDOUT_FILENO, buff_string, strlen(buff_string));//logging
-      
+
+      for(i = 1; i <= process_count; i++)
+	{
+	  if(i != curr_pid)
+	    {
+	      receive(&curr_pid, i, message_rec);
+	      if(message_rec->s_header.s_type != DONE) i--;
+	    }
+	}
+
+
       for(i = 0; i < process_count; i++)
 	wait(NULL);
 
@@ -131,10 +140,42 @@ int main(int argc, char* argv[])
     }
   else
     {
+      MesType = STARTED;
       sprintf(buff_string, log_started_fmt, curr_pid, getpid(), getppid());
       message->s_header.s_magic = MESSAGE_MAGIC;
       message->s_header.s_type = MesType;
-      message->s_header.s_payload_len = strlen(buff_string);
+      message->s_header.s_payload_len = strlen(buff_string) + 1;
+      strcpy(message->s_payload, buff_string);
+      write(STDOUT_FILENO, message->s_payload, strlen(message->s_payload));
+      //logging
+      if(send_multicast(&curr_pid, message) == -1)
+	{
+	  printf("Error while sending. Process_num %d\n", curr_pid);
+	  exit(EXIT_FAILURE);
+	}
+      //
+      for(i = 1; i <= process_count; i++)
+	{
+	  if(i != curr_pid)
+	    {
+	      if(receive(&curr_pid, i, message_rec) == -1)
+		{
+		  printf("Error while receiving. Process_num %d\n", curr_pid);
+		  exit(EXIT_FAILURE);
+		}	
+	      if(message_rec->s_header.s_type != STARTED) i--;
+	    }
+	}
+      sprintf(buff_string, log_received_all_started_fmt, curr_pid);
+      write(STDOUT_FILENO, buff_string, strlen(buff_string));//logging
+      
+      //logging work
+
+      MesType = DONE;
+      sprintf(buff_string, log_done_fmt, curr_pid);
+      message->s_header.s_magic = MESSAGE_MAGIC;
+      message->s_header.s_type = MesType;
+      message->s_header.s_payload_len = strlen(buff_string) + 1;
       strcpy(message->s_payload, buff_string);
       write(STDOUT_FILENO, message->s_payload, strlen(message->s_payload));
       //logging
@@ -152,10 +193,10 @@ int main(int argc, char* argv[])
 		  printf("Error while receiving. Process_num %d\n", curr_pid);
 		  exit(EXIT_FAILURE);
 		}	
-	      printf("received mes proc num %d :%s\n",curr_pid, message_rec->s_payload);
+	      if(message_rec->s_header.s_type != DONE) i--;
 	    }
 	}
-      sprintf(buff_string, log_received_all_started_fmt, curr_pid);
+      sprintf(buff_string, log_received_all_done_fmt, curr_pid);
       write(STDOUT_FILENO, buff_string, strlen(buff_string));//logging
     }
   exit(EXIT_SUCCESS);
