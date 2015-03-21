@@ -12,46 +12,14 @@ int process_count = 1;
 
 MessageType MesType;
 
-
-typedef struct
-{
-  int pipe_in[2];
-  int pipe_out[2];
-} bi_channel_t;
-
-bi_channel_t pipefd[55];
-
-int get_ch_count(int process_count)
-{
-  return (1 + process_count) * process_count;
-}
-
-
-//pid_a shouldn't equals pid_b
-int get_ch_index(int pid_a, int pid_b, int process_count)
-{
-  if(pid_a < pid_b)
-    {
-      return ((2 * process_count - pid_a + 1) * pid_a) / 2 + pid_b - pid_a - 1;
-    }
-  else
-    {
-      return ((2 * process_count - pid_b + 1) * pid_b) / 2 + pid_a - pid_b - 1;
-    }
-}
+int pipefd[11][11][2];
 
 int send(void * self, local_id dst, const Message * msg)
 {
   local_id self_id = *(local_id*)self;
-  int outfd;
   int size = sizeof(msg->s_header) + (msg->s_header).s_payload_len;
-  int index = get_ch_index(self_id, dst, process_count);
-
-  if(self_id < dst)
-    outfd = pipefd[index].pipe_out[1];
-  else 
-    outfd = pipefd[index].pipe_in[1]; 
-  if(write(outfd, (void*) msg, size) == -1)
+  
+  if(write(pipefd[self_id][dst][1], (void*) msg, size) == -1)
     return -1;
   return 0;
 }
@@ -61,8 +29,7 @@ int send_multicast(void * self, const Message * msg)
 {
   int i;
   local_id self_id = *(local_id*)self;
-  printf("pid multicast %d\n", self_id);
-  for(i = 0; i < process_count; i++)
+  for(i = 0; i <= process_count; i++)
     {
       if(i != self_id)
 	if(send(self, i, msg) == -1) 
@@ -75,17 +42,11 @@ int send_multicast(void * self, const Message * msg)
 int receive(void * self, local_id from, Message * msg)
 {
   local_id self_id = *(local_id*)self;
-  int infd;
   int size = sizeof(msg->s_header);
-  int index = get_ch_index(self_id, from, process_count);
 
-  if(self_id < from)
-    infd = pipefd[index].pipe_in[0];
-  else 
-    infd = pipefd[index].pipe_out[0]; 
-  if(read(infd, (void*) msg, size) <0)
-    return -1;
-  if(read(infd, (void*) msg->s_payload, msg->s_header.s_payload_len) <0)
+  if(read(pipefd[from][self_id][0], (void*) msg, size) <= 0)
+  return -1;
+  if(read(pipefd[from][self_id][0], (void*) msg->s_payload, msg->s_header.s_payload_len) <= 0)
     return -1;
   return 0;
 }
@@ -98,9 +59,9 @@ int main(int argc, char* argv[])
 {
   char buff_string[4088];
   Message* message = malloc(sizeof(Message));
-  Message* message_rec = malloc(sizeof(Message));
+  Message* message_rec;
   pid_t c_pid;
-  int i, index;
+  int i, j, index;
   char opt = -1;
   while((opt = getopt(argc, argv, "p:")) != -1)
     switch(opt)
@@ -116,17 +77,15 @@ int main(int argc, char* argv[])
 
   
   //Creating pipes (two for each relation)
-  for(i = 0; i < get_ch_count(process_count); i++)
+  for(i = 0; i < process_count  + 1; i++)
     {
-      if(pipe(pipefd[i].pipe_in) == -1)
-	{
-	  perror("Error while creating pipe:");
-	  exit(EXIT_FAILURE);
-	}
-      if(pipe(pipefd[i].pipe_out) == -1)
-	{
-	  perror("Error while creating pipe:");
-	  exit(EXIT_FAILURE);
+      for(j = 0; j < process_count + 1; j++)
+	{//maybe need not to open pipe when i == j
+	  if(pipe(pipefd[i][j]) == -1)
+	    {
+	      perror("Error while creating pipe:");
+	      exit(EXIT_FAILURE);
+	    }
 	}
     }
 
@@ -142,48 +101,58 @@ int main(int argc, char* argv[])
     }
 
   //Deleting unusing pipes
-  for(i = 0; i < process_count; i++)
+  for(i = 0; i < process_count + 1; i++)
     {
       if(i != curr_pid)
 	{
-	  index = get_ch_index(curr_pid, i, process_count);
-	  if(curr_pid < i) 
-	    {
-	      close(pipefd[index].pipe_in[1]);	    
-	      close(pipefd[index].pipe_out[0]);
-	    }
-	  else
-	    {
-	      close(pipefd[index].pipe_in[0]);
-	      close(pipefd[index].pipe_out[1]);	    
-	    }
+	  close(pipefd[curr_pid][i][0]);
+	  close(pipefd[i][curr_pid][1]);
 	}
     }
 
+  message_rec = malloc(sizeof(Message));
 
   if(curr_pid == 0)
     {
-      printf("%d\n", curr_pid);
-      wait(NULL);
-      exit(EXIT_SUCCESS);
-    }
-  else
-    {
-      printf("%d\n", curr_pid);
-      sprintf(buff_string, log_started_fmt, curr_pid, getpid(), getppid());
-      write(STDOUT_FILENO, buff_string, strlen(buff_string));//logging
-      message->s_header.s_magic = MESSAGE_MAGIC;
-      message->s_header.s_type = MesType;
-      message->s_header.s_payload_len = strlen(buff_string);
-      strcpy(buff_string, message->s_payload);
-      send_multicast(&curr_pid, message);
       for(i = 1; i < process_count; i++)
 	{
 	  if(i != curr_pid)
 	    {
 	      receive(&curr_pid, i, message_rec);
-	      if(message_rec->s_header.s_type = MesType)
-		printf("accepted\n");
+	    }
+	}
+      sprintf(buff_string, log_received_all_started_fmt, curr_pid);
+      write(STDOUT_FILENO, buff_string, strlen(buff_string));//logging
+      
+      for(i = 0; i < process_count; i++)
+	wait(NULL);
+
+      exit(EXIT_SUCCESS);
+    }
+  else
+    {
+      sprintf(buff_string, log_started_fmt, curr_pid, getpid(), getppid());
+      message->s_header.s_magic = MESSAGE_MAGIC;
+      message->s_header.s_type = MesType;
+      message->s_header.s_payload_len = strlen(buff_string);
+      strcpy(message->s_payload, buff_string);
+      write(STDOUT_FILENO, message->s_payload, strlen(message->s_payload));
+      //logging
+      if(send_multicast(&curr_pid, message) == -1)
+	{
+	  printf("Error while sending. Process_num %d\n", curr_pid);
+	  exit(EXIT_FAILURE);
+	}
+      for(i = 1; i <= process_count; i++)
+	{
+	  if(i != curr_pid)
+	    {
+	      if(receive(&curr_pid, i, message_rec) == -1)
+		{
+		  printf("Error while receiving. Process_num %d\n", curr_pid);
+		  exit(EXIT_FAILURE);
+		}	
+	      printf("received mes proc num %d :%s\n",curr_pid, message_rec->s_payload);
 	    }
 	}
       sprintf(buff_string, log_received_all_started_fmt, curr_pid);
