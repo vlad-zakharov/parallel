@@ -61,10 +61,11 @@ int send_multicast(void * self, const Message * msg)
 {
   int i;
   local_id self_id = *(local_id*)self;
+  printf("pid multicast %d\n", self_id);
   for(i = 0; i < process_count; i++)
     {
       if(i != self_id)
-	if(send((void*)&self_id, i, msg) == -1) 
+	if(send(self, i, msg) == -1) 
 	  return -1;
     }
       return 0;  
@@ -96,7 +97,8 @@ int receive(void * self, local_id from, Message * msg)
 int main(int argc, char* argv[])
 {
   char buff_string[4088];
-  Message* message;
+  Message* message = malloc(sizeof(Message));
+  Message* message_rec = malloc(sizeof(Message));
   pid_t c_pid;
   int i, index;
   char opt = -1;
@@ -168,14 +170,24 @@ int main(int argc, char* argv[])
   else
     {
       printf("%d\n", curr_pid);
-      sprintf(message->s_payload, log_started_fmt, curr_pid, getpid(), getppid());
-      write(STDOUT_FILENO, message->s_payload, strlen(message->s_payload));
+      sprintf(buff_string, log_started_fmt, curr_pid, getpid(), getppid());
+      write(STDOUT_FILENO, buff_string, strlen(buff_string));//logging
       message->s_header.s_magic = MESSAGE_MAGIC;
       message->s_header.s_type = MesType;
-      message->s_header.s_payload_len = strlen(message->s_payload);
-      //      message->s_payload =  buff_string;
+      message->s_header.s_payload_len = strlen(buff_string);
+      strcpy(buff_string, message->s_payload);
       send_multicast(&curr_pid, message);
-      printf("pid %d\n", curr_pid);
+      for(i = 1; i < process_count; i++)
+	{
+	  if(i != curr_pid)
+	    {
+	      receive(&curr_pid, i, message_rec);
+	      if(message_rec->s_header.s_type = MesType)
+		printf("accepted\n");
+	    }
+	}
+      sprintf(buff_string, log_received_all_started_fmt, curr_pid);
+      write(STDOUT_FILENO, buff_string, strlen(buff_string));//logging
     }
   exit(EXIT_SUCCESS);
 }
