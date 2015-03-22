@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <time.h>
+#include <fcntl.h>
 
 local_id curr_pid = 0;
 int process_count = 1;
@@ -52,6 +53,13 @@ int receive(void * self, local_id from, Message * msg)
 }
 
 
+int log_event(char* message, int fd)
+{
+  if(write(STDOUT_FILENO, message, strlen(message)) < 0) perror("Error while logging");//logging
+  if(write(fd, message, strlen(message)) < 0) perror("Error while logging");
+}
+
+
 //int receive_any(void * self, Message * msg);
 
 
@@ -63,6 +71,7 @@ int main(int argc, char* argv[])
   pid_t c_pid;
   int i, j, index;
   char opt = -1;
+  int pipelog, eventslog;
   while((opt = getopt(argc, argv, "p:")) != -1)
     switch(opt)
       {
@@ -75,19 +84,39 @@ int main(int argc, char* argv[])
 	  }
       }
 
-  
+    
   //Creating pipes (two for each relation)
+
+  //file for logging openned pipes
+  pipelog = open("pipes.log", O_WRONLY | O_CREAT);
+
+  if(pipelog == -1)
+    perror("Error while opening pipes.log ");
+
   for(i = 0; i < process_count  + 1; i++)
     {
       for(j = 0; j < process_count + 1; j++)
 	{//maybe need not to open pipe when i == j
-	  if(pipe(pipefd[i][j]) == -1)
+	  if(i != j)
 	    {
-	      perror("Error while creating pipe:");
-	      exit(EXIT_FAILURE);
+	      if(pipe(pipefd[i][j]) == -1)
+		{
+		  perror("Error while creating pipe:");
+		  exit(EXIT_FAILURE);
+		}
+	      sprintf(buff_string, "Pipe from %d to %d is openned\n", i, j);
+	      write(pipelog, buff_string, strlen(buff_string));
 	    }
 	}
     }
+  close(pipelog);
+
+
+  //Opening file for events log
+  eventslog = open("events.log", O_WRONLY | O_CREAT);
+
+  if(pipelog == -1)
+    perror("Error while opening events.log ");
 
   //Forking new processes
   for(i = 0; i < process_count; i++)
@@ -140,14 +169,17 @@ int main(int argc, char* argv[])
     }
   else
     {
-      MesType = STARTED;
+      
       sprintf(buff_string, log_started_fmt, curr_pid, getpid(), getppid());
+      
+      //logging
+      log_event(buff_string, eventslog);
+
+      MesType = STARTED;
       message->s_header.s_magic = MESSAGE_MAGIC;
       message->s_header.s_type = MesType;
       message->s_header.s_payload_len = strlen(buff_string) + 1;
       strcpy(message->s_payload, buff_string);
-      write(STDOUT_FILENO, message->s_payload, strlen(message->s_payload));
-      //logging
       if(send_multicast(&curr_pid, message) == -1)
 	{
 	  printf("Error while sending. Process_num %d\n", curr_pid);
@@ -167,18 +199,20 @@ int main(int argc, char* argv[])
 	    }
 	}
       sprintf(buff_string, log_received_all_started_fmt, curr_pid);
-      write(STDOUT_FILENO, buff_string, strlen(buff_string));//logging
-      
-      //logging work
 
+      //logging work
+      log_event(buff_string, eventslog);
+      
       MesType = DONE;
+
       sprintf(buff_string, log_done_fmt, curr_pid);
+      //logging 
+      log_event(buff_string, eventslog);
+
       message->s_header.s_magic = MESSAGE_MAGIC;
       message->s_header.s_type = MesType;
       message->s_header.s_payload_len = strlen(buff_string) + 1;
       strcpy(message->s_payload, buff_string);
-      write(STDOUT_FILENO, message->s_payload, strlen(message->s_payload));
-      //logging
       if(send_multicast(&curr_pid, message) == -1)
 	{
 	  printf("Error while sending. Process_num %d\n", curr_pid);
@@ -197,7 +231,9 @@ int main(int argc, char* argv[])
 	    }
 	}
       sprintf(buff_string, log_received_all_done_fmt, curr_pid);
-      write(STDOUT_FILENO, buff_string, strlen(buff_string));//logging
+
+      //logging receiveng all messages
+      log_event(buff_string, eventslog);
     }
   exit(EXIT_SUCCESS);
 }
