@@ -18,7 +18,7 @@ extern char* optarg;
 
 MessageType MesType;
 
-int pipefd[11][11][2];
+int pipefd[MAX_PROCESS_ID][MAX_PROCESS_ID][2];
 
 int send(void * self, local_id dst, const Message * msg)
 {
@@ -71,7 +71,7 @@ int log_event(char* message, int fd)
 
 int main(int argc, char* argv[])
 {
-  char buff_string[4088];
+  char buff_string[MAX_MESSAGE_LEN];
   Message* message = malloc(sizeof(Message));
   Message* message_rec;
   pid_t c_pid;
@@ -101,7 +101,7 @@ int main(int argc, char* argv[])
   if(pipelog == -1)
     perror("Error while opening pipes.log ");
 
-  for(i = 1; i < process_count  + 1; i++)
+  for(i = 0; i < process_count  + 1; i++)
     {
       for(j = 0; j < process_count + 1; j++)
 	{//maybe need not to open pipe when i == j
@@ -140,6 +140,17 @@ int main(int argc, char* argv[])
   //Deleting unusing pipes
   for(i = 0; i < process_count + 1; i++)
     {
+      for(j = 0; j < process_count + 1; j++)
+	{
+	  if(i != j)
+	    {
+	      if((i != curr_pid) && (j != curr_pid))
+		{
+		  close(pipefd[i][j][0]);
+		  close(pipefd[i][j][1]);
+		}
+	    }
+	}
       if(i != curr_pid)
 	{
 	  close(pipefd[curr_pid][i][0]);
