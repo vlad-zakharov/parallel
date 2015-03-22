@@ -7,9 +7,14 @@
 #include <stdio.h>
 #include <time.h>
 #include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <getopt.h>
+#include <sys/wait.h>
 
 local_id curr_pid = 0;
 int process_count = 1;
+extern char* optarg;
 
 MessageType MesType;
 
@@ -57,6 +62,7 @@ int log_event(char* message, int fd)
 {
   if(write(STDOUT_FILENO, message, strlen(message)) < 0) perror("Error while logging");//logging
   if(write(fd, message, strlen(message)) < 0) perror("Error while logging");
+  return 0;
 }
 
 
@@ -69,31 +75,33 @@ int main(int argc, char* argv[])
   Message* message = malloc(sizeof(Message));
   Message* message_rec;
   pid_t c_pid;
-  int i, j, index;
+  int i, j;
   char opt = -1;
   int pipelog, eventslog;
-  while((opt = getopt(argc, argv, "p:")) != -1)
-    switch(opt)
-      {
-      case 'p':
-	process_count = atoi(optarg);
-	if((process_count < 1) || (process_count > 10))
-	  {
-	    printf("Bad process count. Must be between 1 and 10. Using default value (1).\n");
-	    process_count = 1;
-	  }
-      }
-
+  do
+    {
+      opt = getopt(argc, argv, "p:");
+      switch(opt)
+	{
+	case 'p':
+	  process_count = atoi(optarg);
+	  if((process_count < 1) || (process_count > 10))
+	    {
+	      printf("Bad process count. Must be between 1 and 10. Using default value (1).\n");
+	      process_count = 1;
+	    }
+	}
+    }while(opt != -1);
     
   //Creating pipes (two for each relation)
 
   //file for logging openned pipes
-  pipelog = open("pipes.log", O_WRONLY | O_CREAT);
+  pipelog = open("pipes.log", O_WRONLY | O_CREAT | O_TRUNC, S_IRWXU);
 
   if(pipelog == -1)
     perror("Error while opening pipes.log ");
 
-  for(i = 0; i < process_count  + 1; i++)
+  for(i = 1; i < process_count  + 1; i++)
     {
       for(j = 0; j < process_count + 1; j++)
 	{//maybe need not to open pipe when i == j
@@ -113,9 +121,9 @@ int main(int argc, char* argv[])
 
 
   //Opening file for events log
-  eventslog = open("events.log", O_WRONLY | O_CREAT);
+  eventslog = open("events.log", O_WRONLY | O_CREAT | O_TRUNC,  S_IRWXU | S_IRWXG | S_IRWXO);
 
-  if(pipelog == -1)
+  if(eventslog == -1)
     perror("Error while opening events.log ");
 
   //Forking new processes
@@ -164,6 +172,7 @@ int main(int argc, char* argv[])
 
       for(i = 0; i < process_count; i++)
 	wait(NULL);
+      close(eventslog);
 
       exit(EXIT_SUCCESS);
     }
@@ -234,6 +243,7 @@ int main(int argc, char* argv[])
 
       //logging receiveng all messages
       log_event(buff_string, eventslog);
+      close(eventslog);
     }
   exit(EXIT_SUCCESS);
 }
